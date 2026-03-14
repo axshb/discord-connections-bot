@@ -1,9 +1,6 @@
 {
   description = "discord connections bot";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs, ... }: {
     devShells.x86_64-linux.default = let
@@ -12,9 +9,8 @@
       buildInputs = with pkgs; [
         nodejs_24
         nodePackages.typescript
+        nodePackages.typescript-language-server
       ];
     };
   };
 }
-
-
