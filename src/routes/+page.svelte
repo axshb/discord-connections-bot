@@ -94,16 +94,27 @@
 
   async function sendScore(won: boolean) {
     if (!interactionToken) return;
-    const scoreStr = won ? "🟨🟩🟦🟪 WIN" : "⬛ LOSS";
-    const details = solvedCategories.map(c => `**${c.category}:** ${c.members}`).join('\n');
+
+    const mistakesMade = 4 - mistakesRemaining;
+    const mistakeDots = won
+      ? '⬛'.repeat(mistakesMade) + '🟫'.repeat(4 - mistakesMade)
+      : '⬛⬛⬛⬛';
+
+    const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
+    const solvedGrid = solvedCategories
+      .map((cat, i) => categoryEmojis[i].repeat(4))
+      .join('\n');
+
+    const resultLine = won
+      ? `✅ Solved with ${mistakesMade === 0 ? 'no mistakes!' : `${mistakesMade} mistake${mistakesMade === 1 ? '' : 's'}`}`
+      : `❌ Did not finish`;
 
     await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: userName,
-        score: scoreStr,
-        details,
+        message: `### 🧩 Connections\n**${userName}** just played!\n${resultLine}\n\n${solvedGrid}`,
         interactionToken,
       })
     });
