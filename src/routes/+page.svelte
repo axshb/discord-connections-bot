@@ -22,8 +22,10 @@
   let loading = $state(true);
   let error = $state("");
 
-  // Track mistakes as they happen for the grid
-  let guessHistory = $state<string[]>([]);
+  // Each entry is either a category emoji (correct) or ⬛ (mistake), in order
+  let guessGrid = $state<string[]>([]);
+
+  const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -100,8 +102,6 @@
     loading = false;
   });
 
-  const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
-
   async function sendScore(won: boolean) {
     if (!interactionToken) return;
 
@@ -110,10 +110,7 @@
       ? `✅ ${mistakesMade === 0 ? '0 mistakes' : `${mistakesMade} mistake${mistakesMade === 1 ? '' : 's'}`}`
       : `❌`;
 
-    // Build grid: solved categories as colored squares, mistakes as grey
-    const solvedEmojis = solvedCategories.map(cat => cat.emoji.repeat(4));
-    const mistakeSquares = won ? '⬛'.repeat(mistakesMade) : '⬛'.repeat(4);
-    const grid = [...solvedEmojis, mistakesMade > 0 || !won ? mistakeSquares : ''].filter(Boolean).join('');
+    const grid = guessGrid.join('');
 
     await fetch('/api/score', {
       method: 'POST',
@@ -152,6 +149,13 @@
 
     if (maxMatch === 4) {
       const match = selectedWords[0];
+      // Find the emoji for this category
+      const categoryIndex = data => activeWords.find(w => w.category === match.category)?.emoji ?? '🟨';
+      const emoji = activeWords.find(w => w.category === match.category)?.emoji
+        ?? solvedCategories.find(c => c.category === match.category)?.emoji
+        ?? '🟨';
+      guessGrid = [...guessGrid, emoji];
+
       solvedCategories.push({ ...match });
       activeWords = activeWords.filter(w => !selectedWords.some(s => s.content === w.content));
       selectedWords = [];
@@ -162,6 +166,8 @@
     } else {
       mistakesRemaining--;
       isShaking = true;
+      // Add one grey square for this mistake
+      guessGrid = [...guessGrid, '⬛'];
       if (maxMatch === 3) triggerToast("One away...");
       setTimeout(() => {
         isShaking = false;
