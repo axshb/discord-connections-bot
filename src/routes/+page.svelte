@@ -15,9 +15,15 @@
   let gameWon = $state(false);
 
   let userName = $state("A Player");
+  let userId = $state("");
   let interactionToken = $state("");
+  let guildId = $state("");
+  let channelId = $state("");
   let loading = $state(true);
   let error = $state("");
+
+  // Track mistakes as they happen for the grid
+  let guessHistory = $state<string[]>([]);
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -28,14 +34,14 @@
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        const guildId = discordSdk.guildId;
-        const channelId = discordSdk.channelId;
+        guildId = discordSdk.guildId ?? '';
+        channelId = discordSdk.channelId ?? '';
 
         if (guildId && channelId) {
           const itokRes = await fetch(`/api/itok?guild=${guildId}&channel=${channelId}`);
           if (itokRes.ok) {
-            const { token } = await itokRes.json();
-            interactionToken = token || '';
+            const data = await itokRes.json();
+            interactionToken = data.token || '';
           }
         }
 
@@ -60,6 +66,7 @@
         });
         const user = await userRes.json();
         userName = user.global_name || user.username || "A Player";
+        userId = user.id || '';
       } catch (e) {
         console.error("Discord init failed", e);
       }
@@ -82,6 +89,7 @@
           content: card.content,
           category: cat.title,
           color: colors[i],
+          emoji: categoryEmojis[i],
           members: cat.cards.map((c: any) => c.content).join(', ')
         }))
       ).sort(() => Math.random() - 0.5);
@@ -92,30 +100,32 @@
     loading = false;
   });
 
+  const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
+
   async function sendScore(won: boolean) {
     if (!interactionToken) return;
 
     const mistakesMade = 4 - mistakesRemaining;
-    const mistakeDots = won
-      ? '⬛'.repeat(mistakesMade) + '🟫'.repeat(4 - mistakesMade)
-      : '⬛⬛⬛⬛';
+    const result = won
+      ? `✅ ${mistakesMade === 0 ? '0 mistakes' : `${mistakesMade} mistake${mistakesMade === 1 ? '' : 's'}`}`
+      : `❌`;
 
-    const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
-    const solvedGrid = solvedCategories
-      .map((cat, i) => categoryEmojis[i].repeat(4))
-      .join('\n');
-
-    const resultLine = won
-      ? `✅ Solved with ${mistakesMade === 0 ? 'no mistakes!' : `${mistakesMade} mistake${mistakesMade === 1 ? '' : 's'}`}`
-      : `❌ Did not finish`;
+    // Build grid: solved categories as colored squares, mistakes as grey
+    const solvedEmojis = solvedCategories.map(cat => cat.emoji.repeat(4));
+    const mistakeSquares = won ? '⬛'.repeat(mistakesMade) : '⬛'.repeat(4);
+    const grid = [...solvedEmojis, mistakesMade > 0 || !won ? mistakeSquares : ''].filter(Boolean).join('');
 
     await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        userId,
         username: userName,
-        message: `### 🧩 Connections\n**${userName}** just played!\n${resultLine}\n\n${solvedGrid}`,
+        result,
+        grid,
         interactionToken,
+        guildId,
+        channelId,
       })
     });
   }
@@ -209,7 +219,7 @@
 </div>
 
 <style>
-  :global(body) { background: #232323; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  :global(body) { background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
   #game-container { width: 90vw; max-width: 600px; text-align: center; }
   .status { opacity: 0.6; margin-top: 40px; }
   .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
@@ -222,7 +232,7 @@
   }
   .word-card {
     all: unset;
-    background: #333;
+    background: #2a2a2a;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -235,7 +245,7 @@
     padding: 0 6px;
     box-sizing: border-box;
   }
-  .word-card.selected { background: #5a594e; }
+  .word-card.selected { background: #4a4a3e; }
   .solved-row {
     grid-column: span 4;
     grid-row: span 1;
@@ -254,8 +264,8 @@
   .solved-row span { font-size: 0.75rem; opacity: 0.85; }
   .mistakes-container { margin-bottom: 20px; }
   .dots { display: inline-flex; gap: 10px; }
-  .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
-  .dot.lost { background: #1a1a1a; }
+  .dot { width: 14px; height: 14px; background: #4a4a3e; border-radius: 50%; }
+  .dot.lost { background: #111; }
   .controls button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
   .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
   .end-screen h2 { font-size: 1.5rem; margin-bottom: 8px; }
