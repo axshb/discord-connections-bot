@@ -19,10 +19,10 @@ async function verifyDiscordRequest(request: Request): Promise<boolean> {
   }
 }
 
-async function redisSet(key: string, value: string, exSeconds: number) {
-  await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${exSeconds}`, {
+function redisSet(key: string, value: string, exSeconds: number) {
+  fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${exSeconds}`, {
     headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-  });
+  }).catch(e => console.error('Redis write failed:', e));
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -37,8 +37,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
   if (interaction.type === 2 && interaction.data.name === 'play') {
     const key = `itok:${interaction.guild_id}:${interaction.channel_id}`;
-    await redisSet(key, interaction.token, 840);
-
+    redisSet(key, interaction.token, 840); // fire and forget, no await
     return json({ type: 12 });
   }
 
