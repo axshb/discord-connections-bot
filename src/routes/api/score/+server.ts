@@ -34,15 +34,14 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const clientId = env.VITE_DISCORD_CLIENT_ID;
     const date = today();
+    
     const resultsKey = `results:${guildId}:${channelId}:${date}`;
     const msgIdKey = `msgid:${guildId}:${channelId}:${date}`;
-    const ttl = 86400; // 24 hours
+    const ttl = 86400; 
 
-    // Load existing results
     const existing = await redisGet(resultsKey);
-    const results = existing ? JSON.parse(existing) : [];
+    let results = existing ? JSON.parse(existing) : [];
 
-    // Add this user if they haven't submitted yet
     if (!results.find((r: any) => r.userId === userId)) {
       results.push({ userId, username, result, grid });
       await redisSet(resultsKey, JSON.stringify(results), ttl);
@@ -65,34 +64,40 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const existingMsgId = await redisGet(msgIdKey);
 
+    // try to update current itneraction token
     if (existingMsgId) {
-      // Edit the existing message
-      await fetch(`https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}/messages/${existingMsgId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message, components }),
-      });
-    } else {
-      // Post new message and store its ID
-      const res = await fetch(`https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message, components, wait: true }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        console.error("Discord followup failed:", err);
-        return json({ error: "Discord rejected the message", detail: err }, { status: 500 });
+      const editRes = await fetch(
+        `https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}/messages/${existingMsgId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: message, components }),
+        }
+      );
+      if (editRes.ok) {
+        return json({ success: true });
       }
-
-      const posted = await res.json();
-      await redisSet(msgIdKey, posted.id, ttl);
     }
 
-    return json({ success: true });
+    // if failed, try a new 15 minute window
+    const postRes = await fetch(`https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message, components, wait: true }),
+    });
+
+    if (postRes.ok) {
+      const posted = await postRes.json();
+      await redisSet(msgIdKey, posted.id, ttl);
+      return json({ success: true });
+    } else {
+      const err = await postRes.json();
+      console.error("Discord post failed:", err);
+      return json({ error: "Failed to post", detail: err }, { status: 500 });
+    }
+
   } catch (e) {
     console.error(e);
-    return json({ error: "Failed" }, { status: 500 });
+    return json({ error: "Server Error" }, { status: 500 });
   }
 };
