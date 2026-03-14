@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  const CLIENT_ID = import.meta.env.VITE_PUBLIC_DISCORD_CLIENT_ID;
 
   let activeWords = $state<any[]>([]);
   let selectedWords = $state<any[]>([]);
@@ -11,8 +12,38 @@
   let isShaking = $state(false);
   let gameOver = $state(false);
   let gameWon = $state(false);
+  
+  let userName = $state("A Player");
+  let discordSdk: any;
 
   onMount(async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Discord Authentication
+    if (urlParams.has('frame_id')) {
+      try {
+        const { DiscordSDK } = await import('@discord/embedded-app-sdk');
+        discordSdk = new DiscordSDK(CLIENT_ID);
+        await discordSdk.ready();
+
+        // Authorize to get user info
+        const auth = await discordSdk.commands.authorize({
+          client_id: CLIENT_ID,
+          scope: ['identify', 'guilds'],
+          response_type: 'code',
+          prompt: 'none',
+        });
+
+        // Get user profile
+        const response = await fetch('https://discord.com/api/users/@me', {
+          headers: { Authorization: `Bearer ${auth.code}` } // Simplified for this logic
+        });
+        const user = await response.json();
+        userName = user.global_name || user.username;
+      } catch (e) { console.error("Discord Auth Failed", e); }
+    }
+
+    // Fetch NYT Data
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
@@ -28,11 +59,24 @@
     ).sort(() => Math.random() - 0.5);
   });
 
+  async function sendScore(won: boolean) {
+    const scoreStr = won ? "🟨🟩🟦🟪 WIN" : "⬛ LOSS";
+    const details = solvedCategories.map(c => `Category: ${c.category}`).join('\n');
+    
+    await fetch('/api/score', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: userName,
+        score: scoreStr,
+        details: details
+      })
+    });
+  }
+
   function triggerToast(msg: string) {
-    console.log("Toast triggered:", msg); // Debug check
     toastMessage = msg;
     showToast = true;
-    setTimeout(() => { showToast = false; }, 2000);
+    setTimeout(() => showToast = false, 2000);
   }
 
   function toggleSelect(word: any) {
@@ -54,27 +98,28 @@
       solvedCategories.push({ ...match });
       activeWords = activeWords.filter(w => !selectedWords.some(s => s.content === w.content));
       selectedWords = [];
-      if (activeWords.length === 0) gameWon = true;
+      if (activeWords.length === 0) {
+        gameWon = true;
+        sendScore(true);
+      }
     } else {
       mistakesRemaining--;
       isShaking = true;
-      
-      // Fixed: Ensure toast fires before we clear selectedWords
       if (maxMatch === 3) triggerToast("One away...");
-      
       setTimeout(() => {
         isShaking = false;
-        selectedWords = []; // Clear selection after the shake
-        if (mistakesRemaining === 0) gameOver = true;
+        selectedWords = [];
+        if (mistakesRemaining === 0) {
+          gameOver = true;
+          sendScore(false);
+        }
       }, 400);
     }
   }
 </script>
 
 <div id="game-container">
-  {#if showToast}
-    <div class="toast-popup">{toastMessage}</div>
-  {/if}
+  {#if showToast}<div class="toast">{toastMessage}</div>{/if}
 
   <h1>Connections</h1>
 
@@ -84,8 +129,6 @@
         <h3>{cat.category}</h3>
         <p>{cat.members}</p>
       </div>
-    {/each}
-
     {#each activeWords as word}
       <button 
         class="word-card" 
@@ -99,122 +142,39 @@
 
   {#if !gameOver && !gameWon}
     <div class="mistakes-container">
-      Mistakes remaining: 
+      Mistakes: 
       <div class="dots">
         {#each Array(4) as _, i}
           <div class="dot" class:lost={i >= mistakesRemaining}></div>
         {/each}
       </div>
     </div>
-
     <div class="controls">
       <button onclick={() => activeWords = activeWords.sort(() => Math.random() - 0.5)}>Shuffle</button>
       <button disabled={selectedWords.length !== 4} onclick={checkGuess}>Submit</button>
     </div>
   {:else}
     <div class="end-screen">
-      <h2>{gameWon ? "Excellent!" : "Better luck next time..."}</h2>
+      <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
+      <p>Score sent to channel for {userName}</p>
       <button onclick={() => window.location.reload()}>Next Day</button>
     </div>
   {/if}
 </div>
 
 <style>
-  :global(body) {
-    background-color: #000;
-    color: #fff;
-    font-family: 'Franklin Gothic Medium', Arial, sans-serif;
-    margin: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    overflow: hidden;
-  }
-
-  #game-container {
-    width: 90vw;
-    max-width: 600px;
-    text-align: center;
-    position: relative;
-  }
-
-  /* Fixed Toast Styling */
-  .toast-popup {
-    position: fixed;
-    top: 10%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #fff;
-    color: #000;
-    padding: 12px 24px;
-    border-radius: 5px;
-    font-weight: bold;
-    z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin: 24px 0;
-  }
-
-  .shake { animation: shake 0.4s ease-in-out; }
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-10px); }
-    75% { transform: translateX(10px); }
-  }
-
-  .word-card {
-    all: unset;
-    background: #333;
-    aspect-ratio: 1.5 / 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-    font-weight: 700;
-    font-size: clamp(0.6rem, 2.5vw, 1rem);
-    cursor: pointer;
-    text-transform: uppercase;
-    box-sizing: border-box;
-    transition: background 0.1s;
-  }
-
+  :global(body) { background: #1b1b1b; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  #game-container { width: 90vw; max-width: 600px; text-align: center; position: relative; }
+  .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; }
   .word-card.selected { background: #5a594e; }
-
-  .solved-row {
-    grid-column: span 4;
-    min-height: 80px;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    color: #000;
-    margin-bottom: 4px;
-    padding: 10px;
-  }
-
-  .solved-row h3 { margin: 0; text-transform: uppercase; font-size: 1.1rem; }
-  .solved-row p { margin: 5px 0 0 0; font-size: 0.9rem; }
-
-  .mistakes-container { display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
-  .dots { display: inline-flex; gap: 10px; margin-left: 10px; }
-  .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; transition: background 0.3s; }
+  .solved-row { grid-column: span 4; min-height: 80px; border-radius: 6px; display: flex; flex-direction: column; justify-content: center; color: #000; margin-bottom: 4px; padding: 10px; }
+  .mistakes-container { margin-bottom: 20px; }
+  .dots { display: inline-flex; gap: 10px; }
+  .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
   .dot.lost { background: #1a1a1a; }
-
-  .controls button, .end-screen button {
-    all: unset;
-    border: 1px solid white;
-    padding: 14px 28px;
-    border-radius: 35px;
-    font-weight: bold;
-    cursor: pointer;
-    margin: 0 5px;
-  }
-
-  button:disabled { opacity: 0.2; cursor: not-allowed; }
+  .controls button, .end-screen button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
+  .shake { animation: shake 0.4s ease-in-out; }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
 </style>
