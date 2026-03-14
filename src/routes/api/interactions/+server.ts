@@ -32,12 +32,14 @@ export const POST: RequestHandler = async ({ request }) => {
   if (interaction.type === 2 && interaction.data.name === 'play') {
     const channelId = interaction.channel_id;
     const clientId = env.VITE_DISCORD_CLIENT_ID;
-    const playUrl = `https://discord.com/activities/${clientId}?channel=${channelId}`;
+
+    // Store channelId in the activity proxy path so it survives the iframe
+    const activityUrl = `https://discord.com/activities/${clientId}?channel=${channelId}`;
 
     return json({
       type: 4,
       data: {
-        content: "🧩 **Today's Connections puzzle is ready!** Click below to play. Your result will be posted in this channel when you finish.",
+        content: "🧩 **Today's Connections puzzle is ready!**",
         components: [
           {
             type: 1,
@@ -46,7 +48,7 @@ export const POST: RequestHandler = async ({ request }) => {
                 type: 2,
                 style: 5,
                 label: "▶ Play Connections",
-                url: playUrl,
+                url: activityUrl,
               },
             ],
           },

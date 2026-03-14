@@ -16,6 +16,8 @@
 
   let userName = $state("A Player");
   let currentChannelId = $state("");
+  let loading = $state(true);
+  let error = $state("");
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -23,23 +25,34 @@
 
     if (urlParams.has('frame_id')) {
       try {
-        const { DiscordSDK } = await import('@discord/embedded-app-sdk');
+        const { DiscordSDK, DiscordSDKMock } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
+        // channel from URL param passed through the activity launch URL
         currentChannelId = textChannelId;
 
-        const auth = await discordSdk.commands.authorize({
+        const { code } = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
           response_type: 'code',
           prompt: 'none',
           scope: ['identify'],
         });
 
-        const response = await fetch('https://discord.com/api/users/@me', {
-          headers: { Authorization: `Bearer ${auth.code}` }
+        // Exchange code for token via our backend (keeps client_secret server-side)
+        const tokenRes = await fetch('/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
         });
-        const user = await response.json();
+        const { access_token } = await tokenRes.json();
+
+        await discordSdk.commands.authenticate({ access_token });
+
+        const userRes = await fetch('https://discord.com/api/users/@me', {
+          headers: { Authorization: `Bearer ${access_token}` }
+        });
+        const user = await userRes.json();
         userName = user.global_name || user.username || "A Player";
       } catch (e) {
         console.error("Discord init failed", e);
@@ -49,19 +62,31 @@
       currentChannelId = textChannelId;
     }
 
-    const today = new Date().toISOString().split('T')[0];
-    const res = await fetch(`/api/connections/${today}`);
-    const data = await res.json();
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await fetch(`/api/connections/${today}`);
+      const data = await res.json();
 
-    const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
-    activeWords = data.categories.flatMap((cat: any, i: number) =>
-      cat.cards.map((card: any) => ({
-        content: card.content,
-        category: cat.title,
-        color: colors[i],
-        members: cat.cards.map((c: any) => c.content).join(', ')
-      }))
-    ).sort(() => Math.random() - 0.5);
+      if (data.error) {
+        error = "Couldn't load today's puzzle.";
+        loading = false;
+        return;
+      }
+
+      const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
+      activeWords = data.categories.flatMap((cat: any, i: number) =>
+        cat.cards.map((card: any) => ({
+          content: card.content,
+          category: cat.title,
+          color: colors[i],
+          members: cat.cards.map((c: any) => c.content).join(', ')
+        }))
+      ).sort(() => Math.random() - 0.5);
+    } catch (e) {
+      error = "Couldn't load today's puzzle.";
+    }
+
+    loading = false;
   });
 
   async function sendScore(won: boolean) {
@@ -129,44 +154,50 @@
 <div id="game-container">
   {#if showToast}<div class="toast">{toastMessage}</div>{/if}
   <h1>Connections</h1>
-  <div class="grid" class:shake={isShaking}>
-    {#each solvedCategories as cat}
-      <div class="solved-row" style:background={cat.color}>
-        <h3>{cat.category}</h3>
-        <p>{cat.members}</p>
-      </div>
-    {/each}
-    {#each activeWords as word}
-      <button class="word-card" class:selected={selectedWords.includes(word)} onclick={() => toggleSelect(word)}>
-        {word.content}
-      </button>
-    {/each}
-  </div>
-  {#if !gameOver && !gameWon}
-    <div class="mistakes-container">
-      Mistakes remaining:
-      <div class="dots">
-        {#each Array(4) as _, i}
-          <div class="dot" class:lost={i >= mistakesRemaining}></div>
-        {/each}
-      </div>
-    </div>
-    <div class="controls">
-      <button onclick={() => activeWords = [...activeWords].sort(() => Math.random() - 0.5)}>Shuffle</button>
-      <button disabled={selectedWords.length !== 4} onclick={checkGuess}>Submit</button>
-    </div>
+  {#if loading}
+    <p class="status">Loading today's puzzle...</p>
+  {:else if error}
+    <p class="status">{error}</p>
   {:else}
-    <div class="end-screen">
-      <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
-      <p>{currentChannelId ? "Result posted in channel." : "Game complete!"}</p>
-      <button onclick={() => window.location.reload()}>Play Again</button>
+    <div class="grid" class:shake={isShaking}>
+      {#each solvedCategories as cat}
+        <div class="solved-row" style:background={cat.color}>
+          <h3>{cat.category}</h3>
+          <p>{cat.members}</p>
+        </div>
+      {/each}
+      {#each activeWords as word}
+        <button class="word-card" class:selected={selectedWords.includes(word)} onclick={() => toggleSelect(word)}>
+          {word.content}
+        </button>
+      {/each}
     </div>
+    {#if !gameOver && !gameWon}
+      <div class="mistakes-container">
+        Mistakes remaining:
+        <div class="dots">
+          {#each Array(4) as _, i}
+            <div class="dot" class:lost={i >= mistakesRemaining}></div>
+          {/each}
+        </div>
+      </div>
+      <div class="controls">
+        <button onclick={() => activeWords = [...activeWords].sort(() => Math.random() - 0.5)}>Shuffle</button>
+        <button disabled={selectedWords.length !== 4} onclick={checkGuess}>Submit</button>
+      </div>
+    {:else}
+      <div class="end-screen">
+        <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
+        <p>{currentChannelId ? "Result posted in channel." : "Game complete!"}</p>
+      </div>
+    {/if}
   {/if}
 </div>
 
 <style>
   :global(body) { background: #232323; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
   #game-container { width: 90vw; max-width: 600px; text-align: center; }
+  .status { opacity: 0.6; margin-top: 40px; }
   .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
   .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
@@ -176,8 +207,10 @@
   .dots { display: inline-flex; gap: 10px; }
   .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
   .dot.lost { background: #1a1a1a; }
-  .controls button, .end-screen button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
+  .controls button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
   .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .end-screen h2 { font-size: 1.5rem; margin-bottom: 8px; }
+  .end-screen p { opacity: 0.7; }
   .shake { animation: shake 0.4s ease-in-out; }
   @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
 </style>
