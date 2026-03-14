@@ -30,31 +30,9 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   if (interaction.type === 2 && interaction.data.name === 'play') {
-    const clientId = env.VITE_DISCORD_CLIENT_ID;
-    const token = interaction.token;
-
-    // Pass the interaction token in the URL — Discord passes these through to the iframe
-    const activityUrl = `https://discord.com/activities/${clientId}?itok=${encodeURIComponent(token)}`;
-
-    return json({
-      type: 4,
-      data: {
-        content: "🧩 **Today's Connections puzzle is ready!**",
-        components: [
-          {
-            type: 1,
-            components: [
-              {
-                type: 2,
-                style: 5,
-                label: "▶ Play Connections",
-                url: activityUrl,
-              },
-            ],
-          },
-        ],
-      },
-    });
+    // Type 12 = LAUNCH_ACTIVITY — launches the activity directly and
+    // keeps the interaction token alive for 15 minutes for followups
+    return json({ type: 12 });
   }
 
   return json({ type: 1 });

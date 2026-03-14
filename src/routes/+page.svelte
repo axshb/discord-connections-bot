@@ -21,7 +21,6 @@
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const itok = urlParams.get('itok') || '';
 
     if (urlParams.has('frame_id')) {
       try {
@@ -29,15 +28,15 @@
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        // Read interaction token from URL before Discord can strip it
-        interactionToken = itok;
-
-        const { code } = await discordSdk.commands.authorize({
+        const { code, state } = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
           response_type: 'code',
           prompt: 'none',
           scope: ['identify'],
         });
+
+        // state comes back from Discord after authorize — use it to carry the token
+        interactionToken = state || '';
 
         const tokenRes = await fetch('/api/token', {
           method: 'POST',
@@ -55,10 +54,7 @@
         userName = user.global_name || user.username || "A Player";
       } catch (e) {
         console.error("Discord init failed", e);
-        interactionToken = itok;
       }
-    } else {
-      interactionToken = itok;
     }
 
     try {
