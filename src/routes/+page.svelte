@@ -1,34 +1,32 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  // Use the PUBLIC_ prefix for client-side env vars in SvelteKit
   const CLIENT_ID = import.meta.env.VITE_PUBLIC_DISCORD_CLIENT_ID;
 
   let activeWords = $state<any[]>([]);
   let selectedWords = $state<any[]>([]);
   let solvedCategories = $state<any[]>([]);
   let mistakesRemaining = $state(4);
-  
-  let toastMessage = $state("");
-  let showToast = $state(false);
-  let isShaking = $state(false);
   let gameOver = $state(false);
   let gameWon = $state(false);
   
   let userName = $state("A Player");
+  let currentChannelId = $state(""); // Store the channel context
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     
     if (urlParams.has('frame_id')) {
       try {
-        // Dynamic import to bypass early type checking errors if the SDK is acting up
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
+        
+        // Grab channel ID from the SDK instance
+        currentChannelId = discordSdk.channelId;
 
         const auth = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
-          scope: ['identify', 'guilds'],
+          scope: ['identify'],
           response_type: 'code',
           prompt: 'none',
         });
@@ -38,21 +36,18 @@
         });
         const user = await response.json();
         userName = user.global_name || user.username;
-      } catch (e) { 
-        console.error("Discord Auth Failed", e); 
-      }
+      } catch (e) { console.error(e); }
     }
 
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
     
-    const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
     activeWords = data.categories.flatMap((cat: any, i: number) => 
       cat.cards.map((card: any) => ({
         content: card.content,
         category: cat.title,
-        color: colors[i],
+        color: ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'][i],
         members: cat.cards.map((c: any) => c.content).join(', ')
       }))
     ).sort(() => Math.random() - 0.5);
@@ -67,7 +62,8 @@
       body: JSON.stringify({
         username: userName,
         score: scoreStr,
-        details: details
+        details: details,
+        channelId: currentChannelId // Send dynamic ID
       })
     });
   }
