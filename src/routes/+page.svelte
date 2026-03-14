@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  // Using import.meta.env to match your VITE_ prefix
   const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
 
   let activeWords = $state<any[]>([]);
@@ -21,7 +20,7 @@
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     
-    // discord auth
+    // Auto-detect Discord environment
     if (urlParams.has('frame_id')) {
       try {
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
@@ -47,7 +46,6 @@
       }
     }
 
-    // fetch nyt data
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
@@ -64,6 +62,7 @@
   });
 
   async function sendScore(won: boolean) {
+    if (!currentChannelId) return; // Can't post if not in an activity session
     const scoreStr = won ? "🟨🟩🟦🟪 WIN" : "⬛ LOSS";
     const details = solvedCategories.map(c => `Category: ${c.category}`).join('\n');
     
@@ -126,9 +125,7 @@
 
 <div id="game-container">
   {#if showToast}<div class="toast">{toastMessage}</div>{/if}
-
   <h1>Connections</h1>
-
   <div class="grid" class:shake={isShaking}>
     {#each solvedCategories as cat}
       <div class="solved-row" style:background={cat.color}>
@@ -136,18 +133,12 @@
         <p>{cat.members}</p>
       </div>
     {/each}
-
     {#each activeWords as word}
-      <button 
-        class="word-card" 
-        class:selected={selectedWords.includes(word)}
-        onclick={() => toggleSelect(word)}
-      >
+      <button class="word-card" class:selected={selectedWords.includes(word)} onclick={() => toggleSelect(word)}>
         {word.content}
       </button>
     {/each}
   </div>
-
   {#if !gameOver && !gameWon}
     <div class="mistakes-container">
       Mistakes: 
@@ -171,86 +162,18 @@
 </div>
 
 <style>
-  :global(body) { 
-    background: #000; 
-    color: #fff; 
-    font-family: 'Franklin Gothic Medium', Arial, sans-serif; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    min-height: 100vh; 
-    margin: 0; 
-  }
-  
-  #game-container { width: 90vw; max-width: 600px; text-align: center; position: relative; }
-  
-  .toast { 
-    position: fixed; 
-    top: 10%; 
-    left: 50%; 
-    transform: translateX(-50%); 
-    background: #fff; 
-    color: #000; 
-    padding: 12px 24px; 
-    border-radius: 5px; 
-    font-weight: bold; 
-    z-index: 100; 
-  }
-  
+  :global(body) { background: #000; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  #game-container { width: 90vw; max-width: 600px; text-align: center; }
+  .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
-  
-  .word-card { 
-    all: unset; 
-    background: #333; 
-    aspect-ratio: 1.5 / 1; 
-    display: flex; 
-    align-items: center; 
-    justify-content: center; 
-    border-radius: 6px; 
-    font-weight: 700; 
-    cursor: pointer; 
-    text-transform: uppercase; 
-    font-size: clamp(0.7rem, 2vw, 1rem);
-  }
-  
+  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
   .word-card.selected { background: #5a594e; }
-  
-  .solved-row { 
-    grid-column: span 4; 
-    min-height: 80px; 
-    border-radius: 6px; 
-    display: flex; 
-    flex-direction: column; 
-    justify-content: center; 
-    color: #000; 
-    margin-bottom: 4px; 
-    padding: 10px; 
-  }
-  
-  .solved-row h3 { margin: 0; text-transform: uppercase; font-size: 1.1rem; }
-  .solved-row p { margin: 5px 0 0 0; font-size: 0.9rem; }
-  
-  .mistakes-container { margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .solved-row { grid-column: span 4; border-radius: 6px; color: #000; padding: 10px; }
+  .mistakes-container { margin-bottom: 20px; }
   .dots { display: inline-flex; gap: 10px; }
   .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
   .dot.lost { background: #1a1a1a; }
-  
-  .controls button, .end-screen button { 
-    background: transparent; 
-    color: #fff; 
-    border: 1px solid #fff; 
-    padding: 14px 28px; 
-    border-radius: 35px; 
-    cursor: pointer; 
-    font-weight: bold;
-  }
-  
-  button:disabled { opacity: 0.2; }
-  
+  .controls button, .end-screen button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
   .shake { animation: shake 0.4s ease-in-out; }
-  @keyframes shake { 
-    0%, 100% { transform: translateX(0); } 
-    25% { transform: translateX(-10px); } 
-    75% { transform: translateX(10px); } 
-  }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
 </style>

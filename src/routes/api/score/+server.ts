@@ -13,7 +13,7 @@ export const POST: RequestHandler = async ({ request }) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                content: `**${username}** finished Connections!\nResult: ${score}\n${details}`
+                content: `### 🧩 Connections Result\n**${username}** finished today's puzzle!\n**Result:** ${score}\n\n${details}`
             }),
         });
 
