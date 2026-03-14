@@ -1,27 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  const CLIENT_ID = import.meta.env.VITE_PUBLIC_DISCORD_CLIENT_ID;
+
+  // Using import.meta.env to match your VITE_ prefix
+  const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
 
   let activeWords = $state<any[]>([]);
   let selectedWords = $state<any[]>([]);
   let solvedCategories = $state<any[]>([]);
   let mistakesRemaining = $state(4);
+  
+  let toastMessage = $state("");
+  let showToast = $state(false);
+  let isShaking = $state(false);
   let gameOver = $state(false);
   let gameWon = $state(false);
   
   let userName = $state("A Player");
-  let currentChannelId = $state(""); // Store the channel context
+  let currentChannelId = $state("");
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     
+    // 1. Discord Authentication & Context
     if (urlParams.has('frame_id')) {
       try {
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
         
-        // Grab channel ID from the SDK instance
+        // Capture the channel ID we are playing in
         currentChannelId = discordSdk.channelId;
 
         const auth = await discordSdk.commands.authorize({
@@ -36,18 +43,22 @@
         });
         const user = await response.json();
         userName = user.global_name || user.username;
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error("Discord Auth Failed", e); 
+      }
     }
 
+    // 2. Fetch NYT Data
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
     
+    const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
     activeWords = data.categories.flatMap((cat: any, i: number) => 
       cat.cards.map((card: any) => ({
         content: card.content,
         category: cat.title,
-        color: ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'][i],
+        color: colors[i],
         members: cat.cards.map((c: any) => c.content).join(', ')
       }))
     ).sort(() => Math.random() - 0.5);
@@ -59,13 +70,20 @@
     
     await fetch('/api/score', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: userName,
         score: scoreStr,
         details: details,
-        channelId: currentChannelId // Send dynamic ID
+        channelId: currentChannelId
       })
     });
+  }
+
+  function triggerToast(msg: string) {
+    toastMessage = msg;
+    showToast = true;
+    setTimeout(() => showToast = false, 2000);
   }
 
   function toggleSelect(word: any) {
@@ -94,11 +112,7 @@
     } else {
       mistakesRemaining--;
       isShaking = true;
-      if (maxMatch === 3) {
-        toastMessage = "One away...";
-        showToast = true;
-        setTimeout(() => showToast = false, 2000);
-      }
+      if (maxMatch === 3) triggerToast("One away...");
       setTimeout(() => {
         isShaking = false;
         selectedWords = [];
@@ -151,25 +165,93 @@
   {:else}
     <div class="end-screen">
       <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
-      <p>Score sent to channel for {userName}</p>
+      <p>Result shared in channel.</p>
       <button onclick={() => window.location.reload()}>Play Again</button>
     </div>
   {/if}
 </div>
 
 <style>
-  :global(body) { background: #000; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  :global(body) { 
+    background: #000; 
+    color: #fff; 
+    font-family: 'Franklin Gothic Medium', Arial, sans-serif; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    margin: 0; 
+  }
+  
   #game-container { width: 90vw; max-width: 600px; text-align: center; position: relative; }
-  .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
+  
+  .toast { 
+    position: fixed; 
+    top: 10%; 
+    left: 50%; 
+    transform: translateX(-50%); 
+    background: #fff; 
+    color: #000; 
+    padding: 12px 24px; 
+    border-radius: 5px; 
+    font-weight: bold; 
+    z-index: 100; 
+  }
+  
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
-  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; font-size: 0.9rem; }
+  
+  .word-card { 
+    all: unset; 
+    background: #333; 
+    aspect-ratio: 1.5 / 1; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    border-radius: 6px; 
+    font-weight: 700; 
+    cursor: pointer; 
+    text-transform: uppercase; 
+    font-size: clamp(0.7rem, 2vw, 1rem);
+  }
+  
   .word-card.selected { background: #5a594e; }
-  .solved-row { grid-column: span 4; min-height: 80px; border-radius: 6px; display: flex; flex-direction: column; justify-content: center; color: #000; margin-bottom: 4px; padding: 10px; }
-  .mistakes-container { margin-bottom: 20px; }
+  
+  .solved-row { 
+    grid-column: span 4; 
+    min-height: 80px; 
+    border-radius: 6px; 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center; 
+    color: #000; 
+    margin-bottom: 4px; 
+    padding: 10px; 
+  }
+  
+  .solved-row h3 { margin: 0; text-transform: uppercase; font-size: 1.1rem; }
+  .solved-row p { margin: 5px 0 0 0; font-size: 0.9rem; }
+  
+  .mistakes-container { margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 10px; }
   .dots { display: inline-flex; gap: 10px; }
   .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
   .dot.lost { background: #1a1a1a; }
-  .controls button, .end-screen button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
+  
+  .controls button, .end-screen button { 
+    background: transparent; 
+    color: #fff; 
+    border: 1px solid #fff; 
+    padding: 14px 28px; 
+    border-radius: 35px; 
+    cursor: pointer; 
+    font-weight: bold;
+  }
+  
+  button:disabled { opacity: 0.2; }
+  
   .shake { animation: shake 0.4s ease-in-out; }
-  @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+  @keyframes shake { 
+    0%, 100% { transform: translateX(0); } 
+    25% { transform: translateX(-10px); } 
+    75% { transform: translateX(10px); } 
+  }
 </style>
