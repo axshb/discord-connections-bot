@@ -30,11 +30,11 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   if (interaction.type === 2 && interaction.data.name === 'play') {
-    const channelId = interaction.channel_id;
     const clientId = env.VITE_DISCORD_CLIENT_ID;
+    const token = interaction.token;
 
-    // Store channelId in the activity proxy path so it survives the iframe
-    const activityUrl = `https://discord.com/activities/${clientId}?channel=${channelId}`;
+    // Pass the interaction token in the URL — Discord passes these through to the iframe
+    const activityUrl = `https://discord.com/activities/${clientId}?itok=${encodeURIComponent(token)}`;
 
     return json({
       type: 4,

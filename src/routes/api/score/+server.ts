@@ -4,26 +4,29 @@ import { env } from '$env/dynamic/private';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { username, score, details, channelId } = await request.json();
+    const { username, score, details, interactionToken } = await request.json();
 
-    if (!channelId) {
-      return json({ error: "No channel ID provided" }, { status: 400 });
+    if (!interactionToken) {
+      return json({ error: "No interaction token provided" }, { status: 400 });
     }
 
-    const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bot ${env.DISCORD_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: `### 🧩 Connections Result\n**${username}** finished today's puzzle!\n**Result:** ${score}\n\n${details}`
-      }),
-    });
+    const clientId = env.VITE_DISCORD_CLIENT_ID;
+
+    // Followup webhook posts to the original channel where /play was used
+    const response = await fetch(
+      `https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `### 🧩 Connections Result\n**${username}** finished today's puzzle!\n**Result:** ${score}\n\n${details}`
+        }),
+      }
+    );
 
     if (!response.ok) {
       const err = await response.json();
-      console.error("Discord message failed:", err);
+      console.error("Discord followup failed:", err);
       return json({ error: "Discord rejected the message", detail: err }, { status: 500 });
     }
 

@@ -15,13 +15,13 @@
   let gameWon = $state(false);
 
   let userName = $state("A Player");
-  let currentChannelId = $state("");
+  let interactionToken = $state("");
   let loading = $state(true);
   let error = $state("");
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const textChannelId = urlParams.get('channel') || '';
+    const itok = urlParams.get('itok') || '';
 
     if (urlParams.has('frame_id')) {
       try {
@@ -29,7 +29,8 @@
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        currentChannelId = textChannelId;
+        // Read interaction token from URL before Discord can strip it
+        interactionToken = itok;
 
         const { code } = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
@@ -54,10 +55,10 @@
         userName = user.global_name || user.username || "A Player";
       } catch (e) {
         console.error("Discord init failed", e);
-        currentChannelId = textChannelId;
+        interactionToken = itok;
       }
     } else {
-      currentChannelId = textChannelId;
+      interactionToken = itok;
     }
 
     try {
@@ -88,7 +89,7 @@
   });
 
   async function sendScore(won: boolean) {
-    if (!currentChannelId) return;
+    if (!interactionToken) return;
     const scoreStr = won ? "🟨🟩🟦🟪 WIN" : "⬛ LOSS";
     const details = solvedCategories.map(c => `**${c.category}:** ${c.members}`).join('\n');
 
@@ -99,7 +100,7 @@
         username: userName,
         score: scoreStr,
         details,
-        channelId: currentChannelId
+        interactionToken,
       })
     });
   }
@@ -186,7 +187,7 @@
     {:else}
       <div class="end-screen">
         <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
-        <p>{currentChannelId ? "Result posted in channel." : "Game complete!"}</p>
+        <p>{interactionToken ? "Result posted in channel." : "Game complete!"}</p>
       </div>
     {/if}
   {/if}
