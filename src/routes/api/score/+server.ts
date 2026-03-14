@@ -17,7 +17,22 @@ export const POST: RequestHandler = async ({ request }) => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message }),
+        body: JSON.stringify({
+          content: message,
+          components: [
+            {
+              type: 1,
+              components: [
+                {
+                  type: 2,
+                  style: 5,
+                  label: "▶ Play Connections",
+                  url: `https://discord.com/activities/${clientId}`,
+                },
+              ],
+            },
+          ],
+        }),
       }
     );
 
