@@ -7,51 +7,54 @@
   let selectedWords = $state<any[]>([]);
   let solvedCategories = $state<any[]>([]);
   let mistakesRemaining = $state(4);
-  
+
   let toastMessage = $state("");
   let showToast = $state(false);
   let isShaking = $state(false);
   let gameOver = $state(false);
   let gameWon = $state(false);
-  
+
   let userName = $state("A Player");
   let currentChannelId = $state("");
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
-    
-    // Auto-detect Discord environment
+    const textChannelId = urlParams.get('channel') || '';
+
     if (urlParams.has('frame_id')) {
       try {
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
-        
-        currentChannelId = discordSdk.channelId;
+
+        currentChannelId = textChannelId;
 
         const auth = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
-          scope: ['identify'],
           response_type: 'code',
           prompt: 'none',
+          scope: ['identify'],
         });
 
         const response = await fetch('https://discord.com/api/users/@me', {
           headers: { Authorization: `Bearer ${auth.code}` }
         });
         const user = await response.json();
-        userName = user.global_name || user.username;
-      } catch (e) { 
-        console.error("Discord Auth Failed", e); 
+        userName = user.global_name || user.username || "A Player";
+      } catch (e) {
+        console.error("Discord init failed", e);
+        currentChannelId = textChannelId;
       }
+    } else {
+      currentChannelId = textChannelId;
     }
 
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
-    
+
     const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
-    activeWords = data.categories.flatMap((cat: any, i: number) => 
+    activeWords = data.categories.flatMap((cat: any, i: number) =>
       cat.cards.map((card: any) => ({
         content: card.content,
         category: cat.title,
@@ -62,17 +65,17 @@
   });
 
   async function sendScore(won: boolean) {
-    if (!currentChannelId) return; // Can't post if not in an activity session
+    if (!currentChannelId) return;
     const scoreStr = won ? "🟨🟩🟦🟪 WIN" : "⬛ LOSS";
-    const details = solvedCategories.map(c => `Category: ${c.category}`).join('\n');
-    
+    const details = solvedCategories.map(c => `**${c.category}:** ${c.members}`).join('\n');
+
     await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: userName,
         score: scoreStr,
-        details: details,
+        details,
         channelId: currentChannelId
       })
     });
@@ -97,7 +100,7 @@
     const counts: Record<string, number> = {};
     selectedWords.forEach(w => counts[w.category] = (counts[w.category] || 0) + 1);
     const maxMatch = Math.max(...Object.values(counts));
-    
+
     if (maxMatch === 4) {
       const match = selectedWords[0];
       solvedCategories.push({ ...match });
@@ -141,7 +144,7 @@
   </div>
   {#if !gameOver && !gameWon}
     <div class="mistakes-container">
-      Mistakes: 
+      Mistakes remaining:
       <div class="dots">
         {#each Array(4) as _, i}
           <div class="dot" class:lost={i >= mistakesRemaining}></div>
@@ -149,13 +152,13 @@
       </div>
     </div>
     <div class="controls">
-      <button onclick={() => activeWords = activeWords.sort(() => Math.random() - 0.5)}>Shuffle</button>
+      <button onclick={() => activeWords = [...activeWords].sort(() => Math.random() - 0.5)}>Shuffle</button>
       <button disabled={selectedWords.length !== 4} onclick={checkGuess}>Submit</button>
     </div>
   {:else}
     <div class="end-screen">
       <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
-      <p>Result shared in channel.</p>
+      <p>{currentChannelId ? "Result posted in channel." : "Game complete!"}</p>
       <button onclick={() => window.location.reload()}>Play Again</button>
     </div>
   {/if}
@@ -174,6 +177,7 @@
   .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
   .dot.lost { background: #1a1a1a; }
   .controls button, .end-screen button { background: transparent; color: #fff; border: 1px solid #fff; padding: 14px 28px; border-radius: 35px; cursor: pointer; }
+  .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
   .shake { animation: shake 0.4s ease-in-out; }
   @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
 </style>
