@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  // Use the PUBLIC_ prefix for client-side env vars in SvelteKit
   const CLIENT_ID = import.meta.env.VITE_PUBLIC_DISCORD_CLIENT_ID;
 
   let activeWords = $state<any[]>([]);
@@ -14,19 +15,17 @@
   let gameWon = $state(false);
   
   let userName = $state("A Player");
-  let discordSdk: any;
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     
-    // Discord Authentication
     if (urlParams.has('frame_id')) {
       try {
+        // Dynamic import to bypass early type checking errors if the SDK is acting up
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
-        discordSdk = new DiscordSDK(CLIENT_ID);
+        const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        // Authorize to get user info
         const auth = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
           scope: ['identify', 'guilds'],
@@ -34,16 +33,16 @@
           prompt: 'none',
         });
 
-        // Get user profile
         const response = await fetch('https://discord.com/api/users/@me', {
-          headers: { Authorization: `Bearer ${auth.code}` } // Simplified for this logic
+          headers: { Authorization: `Bearer ${auth.code}` }
         });
         const user = await response.json();
         userName = user.global_name || user.username;
-      } catch (e) { console.error("Discord Auth Failed", e); }
+      } catch (e) { 
+        console.error("Discord Auth Failed", e); 
+      }
     }
 
-    // Fetch NYT Data
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
@@ -73,12 +72,6 @@
     });
   }
 
-  function triggerToast(msg: string) {
-    toastMessage = msg;
-    showToast = true;
-    setTimeout(() => showToast = false, 2000);
-  }
-
   function toggleSelect(word: any) {
     if (gameOver || gameWon) return;
     if (selectedWords.includes(word)) {
@@ -105,7 +98,11 @@
     } else {
       mistakesRemaining--;
       isShaking = true;
-      if (maxMatch === 3) triggerToast("One away...");
+      if (maxMatch === 3) {
+        toastMessage = "One away...";
+        showToast = true;
+        setTimeout(() => showToast = false, 2000);
+      }
       setTimeout(() => {
         isShaking = false;
         selectedWords = [];
@@ -129,6 +126,8 @@
         <h3>{cat.category}</h3>
         <p>{cat.members}</p>
       </div>
+    {/each}
+
     {#each activeWords as word}
       <button 
         class="word-card" 
@@ -157,17 +156,17 @@
     <div class="end-screen">
       <h2>{gameWon ? "Excellent!" : "Game Over"}</h2>
       <p>Score sent to channel for {userName}</p>
-      <button onclick={() => window.location.reload()}>Next Day</button>
+      <button onclick={() => window.location.reload()}>Play Again</button>
     </div>
   {/if}
 </div>
 
 <style>
-  :global(body) { background: #1b1b1b; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+  :global(body) { background: #000; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
   #game-container { width: 90vw; max-width: 600px; text-align: center; position: relative; }
   .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
-  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; }
+  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; font-size: 0.9rem; }
   .word-card.selected { background: #5a594e; }
   .solved-row { grid-column: span 4; min-height: 80px; border-radius: 6px; display: flex; flex-direction: column; justify-content: center; color: #000; margin-bottom: 4px; padding: 10px; }
   .mistakes-container { margin-bottom: 20px; }
