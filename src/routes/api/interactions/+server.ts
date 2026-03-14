@@ -19,6 +19,12 @@ async function verifyDiscordRequest(request: Request): Promise<boolean> {
   }
 }
 
+async function redisSet(key: string, value: string, exSeconds: number) {
+  await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${exSeconds}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+}
+
 export const POST: RequestHandler = async ({ request }) => {
   const isValid = await verifyDiscordRequest(request);
   if (!isValid) return new Response('Unauthorized', { status: 401 });
@@ -30,8 +36,9 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   if (interaction.type === 2 && interaction.data.name === 'play') {
-    // Type 12 = LAUNCH_ACTIVITY — launches the activity directly and
-    // keeps the interaction token alive for 15 minutes for followups
+    const key = `itok:${interaction.guild_id}:${interaction.channel_id}`;
+    await redisSet(key, interaction.token, 840);
+
     return json({ type: 12 });
   }
 

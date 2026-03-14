@@ -28,15 +28,23 @@
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        const { code, state } = await discordSdk.commands.authorize({
+        const guildId = discordSdk.guildId;
+        const channelId = discordSdk.channelId;
+
+        if (guildId && channelId) {
+          const itokRes = await fetch(`/api/itok?guild=${guildId}&channel=${channelId}`);
+          if (itokRes.ok) {
+            const { token } = await itokRes.json();
+            interactionToken = token || '';
+          }
+        }
+
+        const { code } = await discordSdk.commands.authorize({
           client_id: CLIENT_ID,
           response_type: 'code',
           prompt: 'none',
           scope: ['identify'],
         });
-
-        // state comes back from Discord after authorize — use it to carry the token
-        interactionToken = state || '';
 
         const tokenRes = await fetch('/api/token', {
           method: 'POST',
