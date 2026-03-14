@@ -25,11 +25,10 @@
 
     if (urlParams.has('frame_id')) {
       try {
-        const { DiscordSDK, DiscordSDKMock } = await import('@discord/embedded-app-sdk');
+        const { DiscordSDK } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
 
-        // channel from URL param passed through the activity launch URL
         currentChannelId = textChannelId;
 
         const { code } = await discordSdk.commands.authorize({
@@ -39,7 +38,6 @@
           scope: ['identify'],
         });
 
-        // Exchange code for token via our backend (keeps client_secret server-side)
         const tokenRes = await fetch('/api/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -162,8 +160,8 @@
     <div class="grid" class:shake={isShaking}>
       {#each solvedCategories as cat}
         <div class="solved-row" style:background={cat.color}>
-          <h3>{cat.category}</h3>
-          <p>{cat.members}</p>
+          <strong>{cat.category}</strong>
+          <span>{cat.members}</span>
         </div>
       {/each}
       {#each activeWords as word}
@@ -199,10 +197,45 @@
   #game-container { width: 90vw; max-width: 600px; text-align: center; }
   .status { opacity: 0.6; margin-top: 40px; }
   .toast { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 12px 24px; border-radius: 5px; font-weight: bold; z-index: 100; }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
-  .word-card { all: unset; background: #333; aspect-ratio: 1.5 / 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: 700; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 80px;
+    gap: 8px;
+    margin: 24px 0;
+  }
+  .word-card {
+    all: unset;
+    background: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 0 6px;
+    box-sizing: border-box;
+  }
   .word-card.selected { background: #5a594e; }
-  .solved-row { grid-column: span 4; border-radius: 6px; color: #000; padding: 10px; }
+  .solved-row {
+    grid-column: span 4;
+    grid-row: span 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: #000;
+    font-size: 0.85rem;
+    box-sizing: border-box;
+    padding: 0 12px;
+    overflow: hidden;
+  }
+  .solved-row strong { font-size: 0.9rem; text-transform: uppercase; }
+  .solved-row span { font-size: 0.75rem; opacity: 0.85; }
   .mistakes-container { margin-bottom: 20px; }
   .dots { display: inline-flex; gap: 10px; }
   .dot { width: 14px; height: 14px; background: #5a594e; border-radius: 50%; }
