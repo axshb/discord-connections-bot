@@ -150,7 +150,7 @@
     if (maxMatch === 4) {
       const match = selectedWords[0];
       // Find the emoji for this category
-      const categoryIndex = data => activeWords.find(w => w.category === match.category)?.emoji ?? '🟨';
+      const categoryIndex = data => activeWords.find(w => w.category === match.category)?.emoji ?? '🟨'; // unused
       const emoji = activeWords.find(w => w.category === match.category)?.emoji
         ?? solvedCategories.find(c => c.category === match.category)?.emoji
         ?? '🟨';
