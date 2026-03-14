@@ -3,16 +3,15 @@ import { InteractionType, InteractionResponseType, verifyKey } from 'discord-int
 import type { RequestHandler } from '@sveltejs/kit';
 
 export const POST: RequestHandler = async ({ request }) => {
-    // 1. Verify the request is actually from Discord (Required)
     const signature = request.headers.get('x-signature-ed25519');
     const timestamp = request.headers.get('x-signature-timestamp');
-    const body = await request.text(); // Need raw body for verification
+    const body = await request.text();
 
     const isValidRequest = signature && timestamp && verifyKey(
         body,
         signature,
         timestamp,
-        process.env.DISCORD_PUBLIC_KEY! // Get this from "General Information" in Discord Portal
+        process.env.DISCORD_PUBLIC_KEY! 
     );
 
     if (!isValidRequest) {
@@ -21,12 +20,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const interaction = JSON.parse(body);
 
-    // 2. Handle Discord PING (Handshake)
     if (interaction.type === InteractionType.PING) {
         return json({ type: InteractionResponseType.PONG });
     }
 
-    // 3. Handle Slash Command (/connections)
     if (interaction.type === InteractionType.APPLICATION_COMMAND) {
         if (interaction.data.name === 'connections') {
             return json({
@@ -34,12 +31,12 @@ export const POST: RequestHandler = async ({ request }) => {
                 data: {
                     content: "Let's play Connections!",
                     components: [{
-                        type: 1, // Action Row
+                        type: 1,
                         components: [{
-                            type: 2, // Button
-                            style: 5, // Link Button
+                            type: 2,
+                            style: 5,
                             label: "Play Game",
-                            url: `https://discord.com/app-assets/${process.env.VITE_PUBLIC_DISCORD_CLIENT_ID}/info`
+                            url: `https://discord.com/app-assets/${process.env.VITE_DISCORD_CLIENT_ID}/info`
                         }]
                     }]
                 }

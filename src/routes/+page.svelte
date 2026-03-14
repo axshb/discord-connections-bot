@@ -21,14 +21,13 @@
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     
-    // 1. Discord Authentication & Context
+    // discord auth
     if (urlParams.has('frame_id')) {
       try {
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
         const discordSdk = new DiscordSDK(CLIENT_ID);
         await discordSdk.ready();
         
-        // Capture the channel ID we are playing in
         currentChannelId = discordSdk.channelId;
 
         const auth = await discordSdk.commands.authorize({
@@ -48,7 +47,7 @@
       }
     }
 
-    // 2. Fetch NYT Data
+    // fetch nyt data
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/connections/${today}`);
     const data = await res.json();
