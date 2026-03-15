@@ -18,29 +18,41 @@ async function redisSet(key: string, value: string, exSeconds: number) {
   });
 }
 
+async function redisDelete(key: string) {
+  await fetch(`${env.UPSTASH_REDIS_REST_URL}/del/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+}
+
 function buildMessage(results: { username: string; result: string; grid: string; userId: string }[]): string {
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   const rows = results.map(r => {
     return `<@${r.userId}> ${r.result}\n${r.grid}`;
-  }).join('\n\n'); 
+  }).join('\n\n');
   return `### 🧩 Connections — ${date}\n${rows}`;
 }
 
+const botHeaders = {
+  'Content-Type': 'application/json',
+  'Authorization': `Bot ${env.DISCORD_BOT_TOKEN}`,
+};
+
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { userId, username, result, grid, interactionToken, guildId, channelId } = await request.json();
+    const { userId, username, result, grid, guildId, channelId } = await request.json();
 
-    if (!interactionToken) {
-      return json({ error: "No interaction token provided" }, { status: 400 });
+    if (!guildId || !channelId) {
+      return json({ error: 'Missing guildId or channelId' }, { status: 400 });
     }
 
     const clientId = env.VITE_DISCORD_CLIENT_ID;
     const date = today();
-    
+
     const resultsKey = `results:${guildId}:${channelId}:${date}`;
     const msgIdKey = `msgid:${guildId}:${channelId}:${date}`;
-    const ttl = 86400; 
+    const ttl = 86400;
 
+    // Load existing results and dedupe by userId
     const existing = await redisGet(resultsKey);
     let results = existing ? JSON.parse(existing) : [];
 
@@ -57,7 +69,7 @@ export const POST: RequestHandler = async ({ request }) => {
           {
             type: 2,
             style: 5,
-            label: "▶ Play Connections",
+            label: '▶ Play Connections',
             url: `https://discord.com/activities/${clientId}`,
           },
         ],
@@ -66,26 +78,20 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const existingMsgId = await redisGet(msgIdKey);
 
-    // try to update current itneraction token
+    // delete old message if it exists, then post a fresh one
     if (existingMsgId) {
-      const editRes = await fetch(
-        `https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}/messages/${existingMsgId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: message, components }),
-        }
-      );
-      if (editRes.ok) {
-        return json({ success: true });
-      }
+      await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${existingMsgId}`, {
+        method: 'DELETE',
+        headers: botHeaders,
+      });
+      await redisDelete(msgIdKey);
     }
 
-    // if failed, try a new 15 minute window
-    const postRes = await fetch(`https://discord.com/api/v10/webhooks/${clientId}/${interactionToken}`, {
+    // post new message
+    const postRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: message, components, wait: true }),
+      headers: botHeaders,
+      body: JSON.stringify({ content: message, components }),
     });
 
     if (postRes.ok) {
@@ -94,12 +100,12 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ success: true });
     } else {
       const err = await postRes.json();
-      console.error("Discord post failed:", err);
-      return json({ error: "Failed to post", detail: err }, { status: 500 });
+      console.error('Discord post failed:', err);
+      return json({ error: 'Failed to post', detail: err }, { status: 500 });
     }
 
   } catch (e) {
     console.error(e);
-    return json({ error: "Server Error" }, { status: 500 });
+    return json({ error: 'Server Error' }, { status: 500 });
   }
 };
