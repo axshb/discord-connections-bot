@@ -19,6 +19,12 @@ async function verifyDiscordRequest(request: Request): Promise<boolean> {
   }
 }
 
+async function deleteInteractionMessage(appId: string, token: string) {
+  await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
+    method: 'DELETE',
+  });
+}
+
 export const POST: RequestHandler = async ({ request }) => {
   const isValid = await verifyDiscordRequest(request);
   if (!isValid) return new Response('Unauthorized', { status: 401 });
@@ -29,15 +35,19 @@ export const POST: RequestHandler = async ({ request }) => {
     return json({ type: 1 });
   }
 
-  // /play slash command or entry point, to launch activity silently
-  if (interaction.type === 2 || interaction.type === 4) {
-    return json({
-      type: 4,
-      data: {
-        content: '',
-        flags: 64, // ephemeral aka only visible to the user who ran it, and empty so nothing shows
-      },
-    });
+  if (interaction.type === 2 && interaction.data.name === 'play') {
+    const appId = env.VITE_DISCORD_CLIENT_ID;
+    const token = interaction.token;
+
+    // Launch the activity
+    // Then delete the auto-posted Game Invitation message in the background
+    setTimeout(() => {
+      deleteInteractionMessage(appId, token).catch(e =>
+        console.error('Failed to delete interaction message:', e)
+      );
+    }, 1500); // small delay to let Discord post it first
+
+    return json({ type: 12 });
   }
 
   return json({ type: 1 });
