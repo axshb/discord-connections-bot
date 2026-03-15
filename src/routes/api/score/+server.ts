@@ -61,23 +61,26 @@ function fillRoundRect(ctx: any, x: number, y: number, w: number, h: number, r: 
 function cardHeight(guessCount: number): number {
   const gridRows = Math.ceil(Math.max(guessCount, 1) / GRID_COLS);
   const gridH = gridRows * (SQUARE + SQUARE_GAP) - SQUARE_GAP;
-  // avatar + result indicator dot + grid + padding
   return INNER_PAD + AVATAR_SIZE + 8 + 10 + 8 + gridH + INNER_PAD;
 }
 
-async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+// FIX: Return ArrayBuffer directly to avoid ReferenceError: Buffer is not defined
+async function fetchImageBuffer(url: string): Promise<ArrayBuffer | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'DiscordBot (Canvas/1.0)' }
+    });
     if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
-  } catch {
+    return await res.arrayBuffer();
+  } catch (e) {
+    console.error("Avatar fetch error:", e);
     return null;
   }
 }
 
 async function generateImage(
   results: { userId: string; username: string; avatarHash: string | null; result: string; grid: string }[]
-): Promise<Buffer> {
+): Promise<any> { // Using any/Uint8Array to avoid strict Node Buffer typing conflicts
   const count = results.length;
   const cols = Math.min(count, COLS);
   const rows = Math.ceil(count / COLS);
@@ -193,7 +196,7 @@ const COMPONENTS = [
   },
 ];
 
-async function discordPost(channelId: string, imageBuffer: Buffer, caption: string): Promise<string | null> {
+async function discordPost(channelId: string, imageBuffer: any, caption: string): Promise<string | null> {
   const form = new FormData();
   form.append('payload_json', JSON.stringify({ content: caption, components: COMPONENTS }));
   form.append('files[0]', new Blob([imageBuffer as any], { type: 'image/png' }), 'connections.png');
@@ -209,7 +212,7 @@ async function discordPost(channelId: string, imageBuffer: Buffer, caption: stri
   return null;
 }
 
-async function discordEdit(channelId: string, msgId: string, imageBuffer: Buffer, caption: string): Promise<boolean> {
+async function discordEdit(channelId: string, msgId: string, imageBuffer: any, caption: string): Promise<boolean> {
   const form = new FormData();
   form.append('payload_json', JSON.stringify({ content: caption, components: COMPONENTS, attachments: [] }));
   form.append('files[0]', new Blob([imageBuffer as any], { type: 'image/png' }), 'connections.png');
