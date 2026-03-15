@@ -151,10 +151,11 @@
     loading = false;
   });
 
-  async function sendScore(won: boolean) {
-    if (!interactionToken) return;
+  async function sendScore(won: boolean | null = null) {
+    if (!userId || !guildId || !channelId) return;
 
-    const result = won ? `✅` : `❌`;
+    // won=true finished, won=false lost, won=null in progress
+    const result = won === true ? '✅' : won === false ? '❌' : '🔄';
     const grid = guessGrid.join('');
 
     await fetch('/api/score', {
@@ -165,7 +166,6 @@
         username: userName,
         result,
         grid,
-        interactionToken,
         guildId,
         channelId,
       })
@@ -206,9 +206,10 @@
       if (activeWords.length === 0) {
         gameWon = true;
         await saveState();
-        sendScore(true);
+        await sendScore(true);
       } else {
         await saveState();
+        sendScore(null); // live update, fire and forget
       }
     } else {
       mistakesRemaining--;
@@ -221,9 +222,10 @@
         if (mistakesRemaining === 0) {
           gameOver = true;
           await saveState();
-          sendScore(false);
+          await sendScore(false);
         } else {
           await saveState();
+          sendScore(null); // live update, fire and forget
         }
       }, 400);
     }
