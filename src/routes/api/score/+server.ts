@@ -20,7 +20,9 @@ async function redisSet(key: string, value: string, exSeconds: number) {
 
 function buildMessage(results: { username: string; result: string; grid: string; userId: string }[]): string {
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  const rows = results.map(r => `<@${r.userId}>  ${r.result}  ${r.grid}`).join('\n');
+  const rows = results.map(r => {
+    return `<@${r.userId}> ${r.result}\n${r.grid}`;
+  }).join('\n\n'); 
   return `### 🧩 Connections — ${date}\n${rows}`;
 }
 

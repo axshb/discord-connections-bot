@@ -22,10 +22,50 @@
   let loading = $state(true);
   let error = $state("");
 
-  // Each entry is either a category emoji (correct) or ⬛ (mistake), in order
   let guessGrid = $state<string[]>([]);
 
   const categoryEmojis = ['🟨', '🟩', '🟦', '🟪'];
+
+  async function saveState() {
+    if (!userId) return;
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        state: {
+          activeWords,
+          solvedCategories,
+          mistakesRemaining,
+          guessGrid,
+          gameOver,
+          gameWon,
+        }
+      })
+    });
+  }
+
+  async function restoreState(allWords: any[]): Promise<boolean> {
+    if (!userId) return false;
+    try {
+      const res = await fetch(`/api/state?userId=${userId}`);
+      const saved = await res.json();
+      if (!saved) return false;
+
+      solvedCategories = saved.solvedCategories ?? [];
+      mistakesRemaining = saved.mistakesRemaining ?? 4;
+      guessGrid = saved.guessGrid ?? [];
+      gameOver = saved.gameOver ?? false;
+      gameWon = saved.gameWon ?? false;
+
+      const solvedContents = new Set(saved.solvedCategories.map((c: any) => c.content));
+      activeWords = allWords.filter(w => !solvedContents.has(w.content));
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -86,7 +126,7 @@
       }
 
       const colors = ['#f9df6d', '#a0c35a', '#b0c4ef', '#ba69ac'];
-      activeWords = data.categories.flatMap((cat: any, i: number) =>
+      const allWords = data.categories.flatMap((cat: any, i: number) =>
         cat.cards.map((card: any) => ({
           content: card.content,
           category: cat.title,
@@ -94,7 +134,16 @@
           emoji: categoryEmojis[i],
           members: cat.cards.map((c: any) => c.content).join(', ')
         }))
-      ).sort(() => Math.random() - 0.5);
+      );
+
+      // try to restore saved session first
+      const restored = await restoreState(allWords);
+
+      if (!restored) {
+        // fresh game, shuffle all words
+        activeWords = allWords.sort(() => Math.random() - 0.5);
+      }
+      // if restored, activeWords is already set (filtered + in saved order) by restoreState
     } catch (e) {
       error = "Couldn't load today's puzzle.";
     }
@@ -105,11 +154,7 @@
   async function sendScore(won: boolean) {
     if (!interactionToken) return;
 
-    const mistakesMade = 4 - mistakesRemaining;
-    const result = won
-      ? `✅ ${mistakesMade === 0 ? '0 mistakes' : `${mistakesMade} mistake${mistakesMade === 1 ? '' : 's'}`}`
-      : `❌`;
-
+    const result = won ? `✅` : `❌`;
     const grid = guessGrid.join('');
 
     await fetch('/api/score', {
@@ -142,15 +187,13 @@
     }
   }
 
-  function checkGuess() {
+  async function checkGuess() {
     const counts: Record<string, number> = {};
     selectedWords.forEach(w => counts[w.category] = (counts[w.category] || 0) + 1);
     const maxMatch = Math.max(...Object.values(counts));
 
     if (maxMatch === 4) {
       const match = selectedWords[0];
-      // Find the emoji for this category
-      const categoryIndex = data => activeWords.find(w => w.category === match.category)?.emoji ?? '🟨'; // unused
       const emoji = activeWords.find(w => w.category === match.category)?.emoji
         ?? solvedCategories.find(c => c.category === match.category)?.emoji
         ?? '🟨';
@@ -159,22 +202,28 @@
       solvedCategories.push({ ...match });
       activeWords = activeWords.filter(w => !selectedWords.some(s => s.content === w.content));
       selectedWords = [];
+
       if (activeWords.length === 0) {
         gameWon = true;
+        await saveState();
         sendScore(true);
+      } else {
+        await saveState();
       }
     } else {
       mistakesRemaining--;
       isShaking = true;
-      // Add one grey square for this mistake
       guessGrid = [...guessGrid, '⬛'];
       if (maxMatch === 3) triggerToast("One away...");
-      setTimeout(() => {
+      setTimeout(async () => {
         isShaking = false;
         selectedWords = [];
         if (mistakesRemaining === 0) {
           gameOver = true;
+          await saveState();
           sendScore(false);
+        } else {
+          await saveState();
         }
       }, 400);
     }
