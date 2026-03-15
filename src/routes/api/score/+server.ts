@@ -1,19 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
-let FONT = 'sans-serif';
-try {
-  const fontData = readFileSync(join(process.cwd(), 'static/fonts/Inter-Regular.ttf'));
-  GlobalFonts.register(fontData, 'Inter');
-  FONT = 'Inter';
-  console.log('Font loaded successfully');
-} catch (e) {
-  console.error('Font load failed:', e);
-}
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -37,15 +25,14 @@ async function redisDelete(key: string) {
   });
 }
 
-const CARD_W = 150;
+const AVATAR_SIZE = 56;
+const CARD_W = 160;
 const CARD_PAD = 12;
 const COLS = 4;
 const SQUARE = 18;
 const SQUARE_GAP = 3;
 const GRID_COLS = 4;
-const INNER_PAD = 10;
-const NAME_H = 16;
-const RESULT_H = 14;
+const INNER_PAD = 12;
 const TITLE_H = 40;
 
 const emojiToColor: Record<string, string> = {
@@ -74,12 +61,23 @@ function fillRoundRect(ctx: any, x: number, y: number, w: number, h: number, r: 
 function cardHeight(guessCount: number): number {
   const gridRows = Math.ceil(Math.max(guessCount, 1) / GRID_COLS);
   const gridH = gridRows * (SQUARE + SQUARE_GAP) - SQUARE_GAP;
-  return INNER_PAD + NAME_H + 6 + RESULT_H + 8 + gridH + INNER_PAD;
+  // avatar + result indicator dot + grid + padding
+  return INNER_PAD + AVATAR_SIZE + 8 + 10 + 8 + gridH + INNER_PAD;
 }
 
-function generateImage(
-  results: { username: string; result: string; grid: string }[]
-): Buffer {
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+async function generateImage(
+  results: { userId: string; username: string; avatarHash: string | null; result: string; grid: string }[]
+): Promise<Buffer> {
   const count = results.length;
   const cols = Math.min(count, COLS);
   const rows = Math.ceil(count / COLS);
@@ -92,47 +90,73 @@ function generateImage(
   const canvas = createCanvas(imgW, imgH);
   const ctx = canvas.getContext('2d');
 
+  // Background
   ctx.fillStyle = '#111111';
   ctx.fillRect(0, 0, imgW, imgH);
 
-  const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  ctx.fillStyle = '#cccccc';
-  ctx.font = `bold 15px ${FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`🧩 Connections — ${date}`, imgW / 2, TITLE_H / 2);
+  // Fetch all avatars in parallel
+  const avatarBuffers = await Promise.all(
+    results.map(r =>
+      r.avatarHash
+        ? fetchImageBuffer(`https://cdn.discordapp.com/avatars/${r.userId}/${r.avatarHash}.png?size=64`)
+        : Promise.resolve(null)
+    )
+  );
 
-  results.forEach((r, i) => {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     const col = i % COLS;
     const row = Math.floor(i / COLS);
     const x = CARD_PAD + col * (CARD_W + CARD_PAD);
     const y = TITLE_H + CARD_PAD + row * (cH + CARD_PAD);
     const cx = x + CARD_W / 2;
 
+    // Card background
     ctx.fillStyle = '#222222';
     fillRoundRect(ctx, x, y, CARD_W, cH, 8);
 
     let curY = y + INNER_PAD;
+    const avatarCX = cx;
+    const avatarCY = curY + AVATAR_SIZE / 2;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 12px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    let name = r.username;
-    while (ctx.measureText(name).width > CARD_W - INNER_PAD * 2 && name.length > 1) {
-      name = name.slice(0, -1);
+    // Avatar — circular clip
+    const avatarBuf = avatarBuffers[i];
+    if (avatarBuf) {
+      try {
+        const img = await loadImage(avatarBuf);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, avatarCX - AVATAR_SIZE / 2, avatarCY - AVATAR_SIZE / 2, AVATAR_SIZE, AVATAR_SIZE);
+        ctx.restore();
+      } catch {
+        // draw fallback circle
+        ctx.fillStyle = '#444444';
+        ctx.beginPath();
+        ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = '#444444';
+      ctx.beginPath();
+      ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
     }
-    if (name !== r.username) name += '…';
-    ctx.fillText(name, cx, curY);
-    curY += NAME_H + 6;
 
-    const isDone = r.result === '✅' || r.result === '❌';
-    const resultText = r.result === '✅' ? '✅ Solved' : r.result === '❌' ? '❌ Failed' : '▶ Playing';
-    ctx.fillStyle = r.result === '✅' ? '#a0c35a' : r.result === '❌' ? '#e05555' : '#888888';
-    ctx.font = `${isDone ? 'bold' : 'normal'} 11px ${FONT}`;
-    ctx.fillText(resultText, cx, curY);
-    curY += RESULT_H + 8;
+    curY += AVATAR_SIZE + 8;
 
+    // Result indicator — coloured dot row
+    const dotColor = r.result === '✅' ? '#a0c35a' : r.result === '❌' ? '#e05555' : '#555555';
+    const DOT_R = 5;
+    ctx.fillStyle = dotColor;
+    ctx.beginPath();
+    ctx.arc(cx, curY + DOT_R, DOT_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    curY += 10 + 8;
+
+    // Guess grid
     const squares = Array.from(r.grid);
     const gridW = GRID_COLS * (SQUARE + SQUARE_GAP) - SQUARE_GAP;
     const gridX = x + (CARD_W - gridW) / 2;
@@ -145,7 +169,7 @@ function generateImage(
       ctx.fillStyle = emojiToColor[emoji] ?? '#3a3a3a';
       fillRoundRect(ctx, sx, sy, SQUARE, SQUARE, 3);
     });
-  });
+  }
 
   return canvas.toBuffer('image/png');
 }
@@ -207,7 +231,7 @@ async function discordDelete(channelId: string, msgId: string): Promise<void> {
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { userId, username, result, grid, guildId, channelId } = await request.json();
+    const { userId, username, avatarHash, result, grid, guildId, channelId } = await request.json();
 
     if (!guildId || !channelId) {
       return json({ error: 'Missing guildId or channelId' }, { status: 400 });
@@ -219,25 +243,24 @@ export const POST: RequestHandler = async ({ request }) => {
     const ttl = 86400;
 
     const existing = await redisGet(resultsKey);
-    let results: { userId: string; username: string; result: string; grid: string }[] =
+    let results: { userId: string; username: string; avatarHash: string | null; result: string; grid: string }[] =
       existing ? JSON.parse(existing) : [];
 
     const idx = results.findIndex((r) => r.userId === userId);
     const isNewPlayer = idx < 0;
 
     if (isNewPlayer) {
-      results.push({ userId, username, result, grid });
+      results.push({ userId, username, avatarHash: avatarHash ?? null, result, grid });
     } else {
-      results[idx] = { userId, username, result, grid };
+      results[idx] = { userId, username, avatarHash: avatarHash ?? null, result, grid };
     }
     await redisSet(resultsKey, JSON.stringify(results), ttl);
 
-    const imageBuffer = generateImage(results);
+    const imageBuffer = await generateImage(results);
     const caption = buildCaption(username);
     const existingMsgId = await redisGet(msgIdKey);
 
     if (isNewPlayer) {
-      // new player joined = delete old message and post new one at bottom
       if (existingMsgId) {
         await discordDelete(channelId, existingMsgId);
         await redisDelete(msgIdKey);
@@ -248,14 +271,11 @@ export const POST: RequestHandler = async ({ request }) => {
         return json({ success: true });
       }
       return json({ error: 'Failed to post' }, { status: 500 });
-
     } else {
-      // existing player updating (mid-game guess) = edit in place
       if (existingMsgId) {
         const edited = await discordEdit(channelId, existingMsgId, imageBuffer, caption);
         if (edited) return json({ success: true });
       }
-      // post new if edit failed or no message yet
       const newMsgId = await discordPost(channelId, imageBuffer, caption);
       if (newMsgId) {
         await redisSet(msgIdKey, newMsgId, ttl);
