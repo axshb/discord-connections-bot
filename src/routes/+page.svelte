@@ -16,6 +16,7 @@
 
   let userName = $state("A Player");
   let userId = $state("");
+  let avatarHash = $state("");
   let interactionToken = $state("");
   let guildId = $state("");
   let channelId = $state("");
@@ -109,6 +110,7 @@
         const user = await userRes.json();
         userName = user.global_name || user.username || "A Player";
         userId = user.id || '';
+        avatarHash = user.avatar || '';
       } catch (e) {
         console.error("Discord init failed", e);
       }
@@ -136,14 +138,11 @@
         }))
       );
 
-      // Try to restore saved session first
       const restored = await restoreState(allWords, userId);
 
       if (!restored) {
-        // Fresh game — shuffle all words
         activeWords = allWords.sort(() => Math.random() - 0.5);
       }
-      // If restored, activeWords is already set (filtered + in saved order) by restoreState
     } catch (e) {
       error = "Couldn't load today's puzzle.";
     }
@@ -154,7 +153,6 @@
   async function sendScore(won: boolean | null = null) {
     if (!userId || !guildId || !channelId) return;
 
-    // won=true finished, won=false lost, won=null in progress
     const result = won === true ? '✅' : won === false ? '❌' : '🔄';
     const grid = guessGrid.join('');
 
@@ -164,6 +162,7 @@
       body: JSON.stringify({
         userId,
         username: userName,
+        avatarHash,
         result,
         grid,
         guildId,
@@ -209,7 +208,7 @@
         await sendScore(true);
       } else {
         await saveState();
-        sendScore(null); // live update, fire and forget
+        sendScore(null);
       }
     } else {
       mistakesRemaining--;
@@ -225,7 +224,7 @@
           await sendScore(false);
         } else {
           await saveState();
-          sendScore(null); // live update, fire and forget
+          sendScore(null);
         }
       }, 400);
     }
