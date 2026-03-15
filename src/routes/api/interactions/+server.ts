@@ -19,12 +19,6 @@ async function verifyDiscordRequest(request: Request): Promise<boolean> {
   }
 }
 
-function redisSet(key: string, value: string, exSeconds: number) {
-  fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${exSeconds}`, {
-    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-  }).catch(e => console.error('Redis write failed:', e));
-}
-
 export const POST: RequestHandler = async ({ request }) => {
   const isValid = await verifyDiscordRequest(request);
   if (!isValid) return new Response('Unauthorized', { status: 401 });
@@ -35,10 +29,15 @@ export const POST: RequestHandler = async ({ request }) => {
     return json({ type: 1 });
   }
 
-  if (interaction.type === 2 && interaction.data.name === 'play') {
-    const key = `itok:${interaction.guild_id}:${interaction.channel_id}`;
-    redisSet(key, interaction.token, 840); // fire and forget, no await
-    return json({ type: 12 });
+  // /play slash command or entry point, to launch activity silently
+  if (interaction.type === 2 || interaction.type === 4) {
+    return json({
+      type: 4,
+      data: {
+        content: '',
+        flags: 64, // ephemeral aka only visible to the user who ran it, and empty so nothing shows
+      },
+    });
   }
 
   return json({ type: 1 });

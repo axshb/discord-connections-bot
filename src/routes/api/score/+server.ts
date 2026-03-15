@@ -5,12 +5,15 @@ import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+let FONT = 'sans-serif';
 try {
-  GlobalFonts.register(readFileSync(join(process.cwd(), 'static/fonts/Inter.ttf')), 'Inter');
-} catch {
+  const fontData = readFileSync(join(process.cwd(), 'static/fonts/Inter-Regular.ttf'));
+  GlobalFonts.register(fontData, 'Inter');
+  FONT = 'Inter';
+  console.log('Font loaded successfully');
+} catch (e) {
+  console.error('Font load failed:', e);
 }
-
-const FONT = 'Inter, sans-serif';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -147,10 +150,9 @@ function generateImage(
   return canvas.toBuffer('image/png');
 }
 
-function buildCaption(results: { username: string }[]): string {
+function buildCaption(username: string): string {
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  const names = results.map(r => `**${r.username}**`).join(', ');
-  return `${names} played Connections — ${date}`;
+  return `**${username}** played Connections — ${date}`;
 }
 
 const COMPONENTS = [
@@ -231,11 +233,11 @@ export const POST: RequestHandler = async ({ request }) => {
     await redisSet(resultsKey, JSON.stringify(results), ttl);
 
     const imageBuffer = generateImage(results);
-    const caption = buildCaption(results);
+    const caption = buildCaption(username);
     const existingMsgId = await redisGet(msgIdKey);
 
     if (isNewPlayer) {
-      // new player joined; delete old message and post new one at bottom
+      // new player joined = delete old message and post new one at bottom
       if (existingMsgId) {
         await discordDelete(channelId, existingMsgId);
         await redisDelete(msgIdKey);
@@ -248,7 +250,7 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ error: 'Failed to post' }, { status: 500 });
 
     } else {
-      // existing player updating; edit in place
+      // existing player updating (mid-game guess) = edit in place
       if (existingMsgId) {
         const edited = await discordEdit(channelId, existingMsgId, imageBuffer, caption);
         if (edited) return json({ success: true });
