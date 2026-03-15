@@ -64,23 +64,32 @@ function cardHeight(guessCount: number): number {
   return INNER_PAD + AVATAR_SIZE + 8 + 10 + 8 + gridH + INNER_PAD;
 }
 
-// FIX: Return ArrayBuffer directly to avoid ReferenceError: Buffer is not defined
-async function fetchImageBuffer(url: string): Promise<ArrayBuffer | null> {
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  console.log(`[avatar] fetching: ${url}`);
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'DiscordBot (Canvas/1.0)' }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ConnectionsBot/1.0)',
+      },
     });
-    if (!res.ok) return null;
-    return await res.arrayBuffer();
+    if (!res.ok) {
+      console.error(`[avatar] fetch failed: HTTP ${res.status} for ${url}`);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    console.log(`[avatar] fetched ${buf.byteLength} bytes from ${url}`);
+    return buf;
   } catch (e) {
-    console.error("Avatar fetch error:", e);
+    console.error(`[avatar] fetch threw for ${url}:`, e);
     return null;
   }
 }
 
 async function generateImage(
   results: { userId: string; username: string; avatarHash: string | null; result: string; grid: string }[]
-): Promise<any> { // Using any/Uint8Array to avoid strict Node Buffer typing conflicts
+): Promise<Buffer> {
+  console.log(`[generateImage] rendering ${results.length} cards`);
+
   const count = results.length;
   const cols = Math.min(count, COLS);
   const rows = Math.ceil(count / COLS);
@@ -89,6 +98,8 @@ async function generateImage(
 
   const imgW = cols * (CARD_W + CARD_PAD) + CARD_PAD;
   const imgH = TITLE_H + rows * (cH + CARD_PAD) + CARD_PAD;
+
+  console.log(`[generateImage] canvas size: ${imgW}x${imgH}`);
 
   const canvas = createCanvas(imgW, imgH);
   const ctx = canvas.getContext('2d');
@@ -99,11 +110,14 @@ async function generateImage(
 
   // Fetch all avatars in parallel
   const avatarBuffers = await Promise.all(
-    results.map(r =>
-      r.avatarHash
-        ? fetchImageBuffer(`https://cdn.discordapp.com/avatars/${r.userId}/${r.avatarHash}.png?size=64`)
-        : Promise.resolve(null)
-    )
+    results.map(r => {
+      if (!r.avatarHash) {
+        console.log(`[avatar] no hash for userId=${r.userId}, skipping fetch`);
+        return Promise.resolve(null);
+      }
+      const url = `https://cdn.discordapp.com/avatars/${r.userId}/${r.avatarHash}.png?size=64`;
+      return fetchImageBuffer(url);
+    })
   );
 
   for (let i = 0; i < results.length; i++) {
@@ -126,21 +140,26 @@ async function generateImage(
     const avatarBuf = avatarBuffers[i];
     if (avatarBuf) {
       try {
-        const img = await loadImage(avatarBuf);
+        console.log(`[avatar] loading image for userId=${r.userId}, bufferSize=${avatarBuf.byteLength}`);
+        // Uint8Array is more reliable than raw Buffer with @napi-rs/canvas
+        const img = await loadImage(new Uint8Array(avatarBuf));
+        console.log(`[avatar] loadImage succeeded for userId=${r.userId}, naturalSize=${img.width}x${img.height}`);
         ctx.save();
         ctx.beginPath();
         ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
         ctx.clip();
         ctx.drawImage(img, avatarCX - AVATAR_SIZE / 2, avatarCY - AVATAR_SIZE / 2, AVATAR_SIZE, AVATAR_SIZE);
         ctx.restore();
-      } catch {
-        // draw fallback circle
+      } catch (e) {
+        console.error(`[avatar] loadImage FAILED for userId=${r.userId}:`, e);
+        // Fallback: grey circle
         ctx.fillStyle = '#444444';
         ctx.beginPath();
         ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
         ctx.fill();
       }
     } else {
+      console.log(`[avatar] no buffer for userId=${r.userId}, drawing fallback circle`);
       ctx.fillStyle = '#444444';
       ctx.beginPath();
       ctx.arc(avatarCX, avatarCY, AVATAR_SIZE / 2, 0, Math.PI * 2);
@@ -149,7 +168,7 @@ async function generateImage(
 
     curY += AVATAR_SIZE + 8;
 
-    // Result indicator — coloured dot row
+    // Result indicator — coloured dot
     const dotColor = r.result === '✅' ? '#a0c35a' : r.result === '❌' ? '#e05555' : '#555555';
     const DOT_R = 5;
     ctx.fillStyle = dotColor;
@@ -174,6 +193,7 @@ async function generateImage(
     });
   }
 
+  console.log(`[generateImage] canvas render complete, encoding PNG`);
   return canvas.toBuffer('image/png');
 }
 
@@ -196,7 +216,8 @@ const COMPONENTS = [
   },
 ];
 
-async function discordPost(channelId: string, imageBuffer: any, caption: string): Promise<string | null> {
+async function discordPost(channelId: string, imageBuffer: Buffer, caption: string): Promise<string | null> {
+  console.log(`[discord] posting new message to channel=${channelId}`);
   const form = new FormData();
   form.append('payload_json', JSON.stringify({ content: caption, components: COMPONENTS }));
   form.append('files[0]', new Blob([imageBuffer as any], { type: 'image/png' }), 'connections.png');
@@ -207,12 +228,18 @@ async function discordPost(channelId: string, imageBuffer: any, caption: string)
     body: form,
   });
 
-  if (res.ok) return (await res.json()).id;
-  console.error('Discord post failed:', await res.json());
+  if (res.ok) {
+    const msgId = (await res.json()).id;
+    console.log(`[discord] post succeeded, msgId=${msgId}`);
+    return msgId;
+  }
+  const errBody = await res.json();
+  console.error(`[discord] post failed: HTTP ${res.status}`, JSON.stringify(errBody));
   return null;
 }
 
-async function discordEdit(channelId: string, msgId: string, imageBuffer: any, caption: string): Promise<boolean> {
+async function discordEdit(channelId: string, msgId: string, imageBuffer: Buffer, caption: string): Promise<boolean> {
+  console.log(`[discord] editing message msgId=${msgId} in channel=${channelId}`);
   const form = new FormData();
   form.append('payload_json', JSON.stringify({ content: caption, components: COMPONENTS, attachments: [] }));
   form.append('files[0]', new Blob([imageBuffer as any], { type: 'image/png' }), 'connections.png');
@@ -222,21 +249,36 @@ async function discordEdit(channelId: string, msgId: string, imageBuffer: any, c
     headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
     body: form,
   });
-  return res.ok;
+
+  if (res.ok) {
+    console.log(`[discord] edit succeeded for msgId=${msgId}`);
+    return true;
+  }
+  const errBody = await res.json();
+  console.error(`[discord] edit failed: HTTP ${res.status}`, JSON.stringify(errBody));
+  return false;
 }
 
 async function discordDelete(channelId: string, msgId: string): Promise<void> {
-  await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${msgId}`, {
+  console.log(`[discord] deleting message msgId=${msgId} in channel=${channelId}`);
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${msgId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
   });
+  if (!res.ok) {
+    console.error(`[discord] delete failed: HTTP ${res.status} for msgId=${msgId}`);
+  }
 }
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { userId, username, avatarHash, result, grid, guildId, channelId } = await request.json();
+    const body = await request.json();
+    const { userId, username, avatarHash, result, grid, guildId, channelId } = body;
+
+    console.log(`[POST] incoming: userId=${userId} username=${username} avatarHash=${avatarHash} result=${result} guildId=${guildId} channelId=${channelId}`);
 
     if (!guildId || !channelId) {
+      console.error('[POST] missing guildId or channelId');
       return json({ error: 'Missing guildId or channelId' }, { status: 400 });
     }
 
@@ -249,19 +291,26 @@ export const POST: RequestHandler = async ({ request }) => {
     let results: { userId: string; username: string; avatarHash: string | null; result: string; grid: string }[] =
       existing ? JSON.parse(existing) : [];
 
+    console.log(`[POST] existing results count: ${results.length}`);
+
     const idx = results.findIndex((r) => r.userId === userId);
     const isNewPlayer = idx < 0;
 
     if (isNewPlayer) {
+      console.log(`[POST] new player, pushing to results`);
       results.push({ userId, username, avatarHash: avatarHash ?? null, result, grid });
     } else {
+      console.log(`[POST] existing player at idx=${idx}, updating`);
       results[idx] = { userId, username, avatarHash: avatarHash ?? null, result, grid };
     }
     await redisSet(resultsKey, JSON.stringify(results), ttl);
 
     const imageBuffer = await generateImage(results);
+    console.log(`[POST] image generated, size=${imageBuffer.byteLength} bytes`);
+
     const caption = buildCaption(username);
     const existingMsgId = await redisGet(msgIdKey);
+    console.log(`[POST] existingMsgId=${existingMsgId}, isNewPlayer=${isNewPlayer}`);
 
     if (isNewPlayer) {
       if (existingMsgId) {
@@ -288,7 +337,7 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
   } catch (e) {
-    console.error(e);
+    console.error('[POST] unhandled exception:', e);
     return json({ error: 'Server Error' }, { status: 500 });
   }
 };
