@@ -58,8 +58,8 @@
       gameOver = saved.gameOver ?? false;
       gameWon = saved.gameWon ?? false;
 
-      const solvedContents = new Set(saved.solvedCategories.map((c: any) => c.content));
-      activeWords = allWords.filter(w => !solvedContents.has(w.content));
+      const solvedCategoryNames = new Set(saved.solvedCategories.map((c: any) => c.category));
+      activeWords = allWords.filter(w => !solvedCategoryNames.has(w.category));
 
       return true;
     } catch {
@@ -136,14 +136,11 @@
         }))
       );
 
-      // try to restore saved session first
       const restored = await restoreState(allWords);
 
       if (!restored) {
-        // fresh game, shuffle all words
         activeWords = allWords.sort(() => Math.random() - 0.5);
       }
-      // if restored, activeWords is already set (filtered + in saved order) by restoreState
     } catch (e) {
       error = "Couldn't load today's puzzle.";
     }
