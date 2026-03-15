@@ -34,7 +34,7 @@ function buildMessage(results: { username: string; result: string; grid: string;
 
 const botHeaders = {
   'Content-Type': 'application/json',
-  'Authorization': `Bot ${env.DISCORD_BOT_TOKEN}`,
+  'Authorization': `Bot ${env.DISCORD_TOKEN}`,
 };
 
 export const POST: RequestHandler = async ({ request }) => {
