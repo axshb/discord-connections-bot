@@ -45,10 +45,10 @@
     });
   }
 
-  async function restoreState(allWords: any[]): Promise<boolean> {
-    if (!userId) return false;
+  async function restoreState(allWords: any[], uid: string): Promise<boolean> {
+    if (!uid) return false;
     try {
-      const res = await fetch(`/api/state?userId=${userId}`);
+      const res = await fetch(`/api/state?userId=${uid}`);
       const saved = await res.json();
       if (!saved) return false;
 
@@ -136,11 +136,14 @@
         }))
       );
 
-      const restored = await restoreState(allWords);
+      // Try to restore saved session first
+      const restored = await restoreState(allWords, userId);
 
       if (!restored) {
+        // Fresh game — shuffle all words
         activeWords = allWords.sort(() => Math.random() - 0.5);
       }
+      // If restored, activeWords is already set (filtered + in saved order) by restoreState
     } catch (e) {
       error = "Couldn't load today's puzzle.";
     }
