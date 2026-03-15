@@ -1,7 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+try {
+  GlobalFonts.register(readFileSync(join(process.cwd(), 'static/fonts/Inter.ttf')), 'Inter');
+} catch {
+}
+
+const FONT = 'Inter, sans-serif';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -25,7 +34,6 @@ async function redisDelete(key: string) {
   });
 }
 
-// Layout constants
 const CARD_W = 150;
 const CARD_PAD = 12;
 const COLS = 4;
@@ -81,14 +89,12 @@ function generateImage(
   const canvas = createCanvas(imgW, imgH);
   const ctx = canvas.getContext('2d');
 
-  // Background
   ctx.fillStyle = '#111111';
   ctx.fillRect(0, 0, imgW, imgH);
 
-  // Title
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   ctx.fillStyle = '#cccccc';
-  ctx.font = 'bold 15px sans-serif';
+  ctx.font = `bold 15px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`🧩 Connections — ${date}`, imgW / 2, TITLE_H / 2);
@@ -100,15 +106,13 @@ function generateImage(
     const y = TITLE_H + CARD_PAD + row * (cH + CARD_PAD);
     const cx = x + CARD_W / 2;
 
-    // Card background
     ctx.fillStyle = '#222222';
     fillRoundRect(ctx, x, y, CARD_W, cH, 8);
 
     let curY = y + INNER_PAD;
 
-    // Username
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = `bold 12px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     let name = r.username;
@@ -119,15 +123,13 @@ function generateImage(
     ctx.fillText(name, cx, curY);
     curY += NAME_H + 6;
 
-    // Result label
     const isDone = r.result === '✅' || r.result === '❌';
     const resultText = r.result === '✅' ? '✅ Solved' : r.result === '❌' ? '❌ Failed' : '▶ Playing';
     ctx.fillStyle = r.result === '✅' ? '#a0c35a' : r.result === '❌' ? '#e05555' : '#888888';
-    ctx.font = `${isDone ? 'bold' : 'normal'} 11px sans-serif`;
+    ctx.font = `${isDone ? 'bold' : 'normal'} 11px ${FONT}`;
     ctx.fillText(resultText, cx, curY);
     curY += RESULT_H + 8;
 
-    // Guess grid
     const squares = Array.from(r.grid);
     const gridW = GRID_COLS * (SQUARE + SQUARE_GAP) - SQUARE_GAP;
     const gridX = x + (CARD_W - gridW) / 2;
@@ -233,7 +235,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const existingMsgId = await redisGet(msgIdKey);
 
     if (isNewPlayer) {
-      // New player joined — delete old message and post new one at bottom
+      // new player joined; delete old message and post new one at bottom
       if (existingMsgId) {
         await discordDelete(channelId, existingMsgId);
         await redisDelete(msgIdKey);
@@ -246,12 +248,12 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ error: 'Failed to post' }, { status: 500 });
 
     } else {
-      // Existing player updating (mid-game guess) — edit in place
+      // existing player updating; edit in place
       if (existingMsgId) {
         const edited = await discordEdit(channelId, existingMsgId, imageBuffer, caption);
         if (edited) return json({ success: true });
       }
-      // Fallback: post new if edit failed or no message yet
+      // post new if edit failed or no message yet
       const newMsgId = await discordPost(channelId, imageBuffer, caption);
       if (newMsgId) {
         await redisSet(msgIdKey, newMsgId, ttl);
