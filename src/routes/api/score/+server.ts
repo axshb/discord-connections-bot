@@ -202,7 +202,7 @@ function buildCaption(username: string): string {
   return `**${username}** played Connections — ${date}`;
 }
 
-const COMPONENTS = [
+/*const COMPONENTS = [
   {
     type: 1,
     components: [
@@ -211,6 +211,20 @@ const COMPONENTS = [
         style: 5,
         label: '▶ Play Connections',
         url: `https://discord.com/activities/${process.env.VITE_DISCORD_CLIENT_ID}`,
+      },
+    ],
+  },
+];*/
+
+const COMPONENTS = [
+  {
+    type: 1,
+    components: [
+      {
+        type: 2,
+        style: 1, 
+        label: '▶ Play Connections',
+        custom_id: 'launch_game',
       },
     ],
   },

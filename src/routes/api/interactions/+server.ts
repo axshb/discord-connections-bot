@@ -36,7 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   if (interaction.type === 2 && interaction.data.name === 'play') {
-    const appId = env.VITE_DISCORD_CLIENT_ID;
+    /*const appId = env.VITE_DISCORD_CLIENT_ID;
     const token = interaction.token;
 
     // Launch the activity
@@ -45,9 +45,13 @@ export const POST: RequestHandler = async ({ request }) => {
       deleteInteractionMessage(appId, token).catch(e =>
         console.error('Failed to delete interaction message:', e)
       );
-    }, 1500); // small delay to let Discord post it first
+    }, 1500); // small delay to let Discord post it first*/
 
     return json({ type: 12 });
+  }
+
+  if (interaction.type === 3 && interaction.data.custom_id === 'launch_game') {
+    return json({ type: 12 }); 
   }
 
   return json({ type: 1 });
