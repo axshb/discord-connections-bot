@@ -5,14 +5,7 @@ Invite the bot to your server with [this link](https://discord.com/oauth2/author
 
 ### Usage
 Using the bot is simple. Once it is added to your server, simply use `/play` in a text channel to start the bot. The bot can also be launched as a normal activity in a voice channel.
-
-### Example Output
-```md
-### 🧩 Connections — March 14
-@user_a  ✅ 2 mistakes  🟨⬛🟩⬛🟪🟦
-@user_b  ✅ 0 mistakes  🟩🟨🟪🟦
-```
-The scores message is edited in order to limit spamming a channel. However, after the token expires (15-20 minutes) a new message will be made. 
+The scores message replaced by a new one, when a new player plays Connections, to avoid spamming any given channel. It functions similarly to the official NYT Wordle Bot, using a custom image to display users' scores. 
 
 ### Developing
 Once you've created a project and installed dependencies with `npm install`, start a development server:
