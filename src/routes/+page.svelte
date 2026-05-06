@@ -35,12 +35,12 @@
     const isImage = !!rawCard.image_url;
 
     const imageUrl = rawCard.image_url
-  ? `/api/img-proxy?url=${encodeURIComponent(rawCard.image_url)}`
-  : null;
+      ? `/api/img-proxy?url=${encodeURIComponent(rawCard.image_url)}`
+      : null;
 
     return {
       content:  isImage ? rawCard.image_alt_text : rawCard.content,
-      imageUrl: rawCard.image_url ?? null,
+      imageUrl,
       imageAlt: rawCard.image_alt_text ?? null,
       isImage,
       category: meta.title,
